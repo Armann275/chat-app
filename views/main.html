@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Friends Management</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      padding: 20px;
+      background-color: #f4f4f9;
+    }
+
+    h1 {
+      color: #333;
+    }
+
+    button {
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .container {
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #fff;
+      padding: 20px;
+      margin-top: 20px;
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    ul li {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      margin: 5px 0;
+    }
+
+    ul li button {
+      margin-left: 10px;
+      background-color: #28a745;
+    }
+
+    ul li button.reject {
+      background-color: #dc3545;
+    }
+  </style>
+</head>
+<body>
+  <h1>Friends Management</h1>
+  
+  <div>
+    <button id="addFriendBtn">Add Friend</button>
+    <button id="friendRequestsBtn">Friend Requests</button>
+    <button id="friendsListBtn">Friends List</button>
+  </div>
+
+  <div id="addFriendSection" class="container hidden">
+    <h2>Add a Friend</h2>
+    <form id="addFriendForm">
+      <label>
+        Friend's Username:
+        <input type="text" id="friendUsername" required>
+      </label>
+      <button type="submit">Send Friend Request</button>
+    </form>
+  </div>
+
+  <div id="friendRequestsSection" class="container hidden">
+    <h2>Friend Requests</h2>
+    <ul id="friendRequests"></ul>
+  </div>
+
+  <div id="friendsListSection" class="container hidden">
+    <h2>Friends List</h2>
+    <ul id="friendsList"></ul>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('accessToken');
+
+    // Elements
+    const addFriendSection = document.getElementById('addFriendSection');
+    const friendRequestsSection = document.getElementById('friendRequestsSection');
+    const friendsListSection = document.getElementById('friendsListSection');
+
+    const addFriendBtn = document.getElementById('addFriendBtn');
+    const friendRequestsBtn = document.getElementById('friendRequestsBtn');
+    const friendsListBtn = document.getElementById('friendsListBtn');
+
+    // Button Click Handlers
+    addFriendBtn.addEventListener('click', () => {
+      showSection('addFriend');
+    });
+
+    friendRequestsBtn.addEventListener('click', () => {
+      showSection('friendRequests');
+      fetchFriendRequests();
+    });
+
+    friendsListBtn.addEventListener('click', () => {
+      showSection('friendsList');
+      fetchFriends();
+    });
+
+    function showSection(section) {
+      addFriendSection.classList.add('hidden');
+      friendRequestsSection.classList.add('hidden');
+      friendsListSection.classList.add('hidden');
+
+      if (section === 'addFriend') {
+        addFriendSection.classList.remove('hidden');
+      } else if (section === 'friendRequests') {
+        friendRequestsSection.classList.remove('hidden');
+      } else if (section === 'friendsList') {
+        friendsListSection.classList.remove('hidden');
+      }
+    }
+
+    // Fetch Friend Requests
+    async function fetchFriendRequests() {
+      const response = await fetch('/auth/friendRequest', {
+        headers: { Authorization: token }
+      });
+      const requests = await response.json();
+      const requestsList = document.getElementById('friendRequests');
+      requestsList.innerHTML = '';
+      requests.forEach(req => {
+        const li = document.createElement('li');
+        li.textContent = req.username;
+        li.innerHTML += `
+          <button onclick="handleRequest('${req._id}', 'accept')">Accept</button>
+          <button class="reject" onclick="handleRequest('${req._id}', 'reject')">Reject</button>
+        `;
+        requestsList.appendChild(li);
+      });
+    }
+
+    // Fetch Friends
+    async function fetchFriends() {
+      const response = await fetch('/auth/getFriends', {
+        headers: { Authorization: token }
+      });
+      const friends = await response.json();
+      const friendsList = document.getElementById('friendsList');
+      friendsList.innerHTML = '';
+      friends.forEach(friend => {
+        const li = document.createElement('li');
+        li.textContent = friend.username;
+        friendsList.appendChild(li);
+      });
+    }
+
+    // Handle Friend Request
+    async function handleRequest(userId, choice) {
+      await fetch('/auth/handleRequest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ userId, choise: choice })
+      });
+      fetchFriendRequests();
+      fetchFriends();
+    }
+
+    // Add Friend Form
+    document.getElementById('addFriendForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('friendUsername').value;
+
+      const response = await fetch('/auth/addFriend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ username })
+      });
+
+      if (response.ok) {
+        alert('Friend request sent!');
+      } else {
+        alert('Failed to send request!');
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+
