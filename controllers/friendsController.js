@@ -1,5 +1,6 @@
 const User = require('../model/userModel');
 const mongoose = require('mongoose');
+const io = require('../server')
 
 async function searchUser(req,res,next) {
     try {
@@ -28,6 +29,7 @@ async function addFriend(req,res,next) {
         return res.status(404).json({message:"you cant add yourself"})
     }
     try {
+        const me = await User.findById(req.userId).select("-password","-friends","-reqFriends");
 
         const checkUserExists = await User.findById(userId)
         if (!checkUserExists) {
@@ -78,11 +80,13 @@ async function addFriend(req,res,next) {
                 return res.status(500).json({errorMes:error.message});
             }
         }
-        const addRequest = await User.updateOne({
+
+        const addRequest = await User.findOneAndUpdate({
             _id:userId
         },{
             $push:{reqFriends:req.userId}
         });
+        io.to(userId).emit("newFriendRequest",me)
         return res.status(200).json({messsage:"Requst added Successfully"})
     } catch (error) {
         return res.status(500).json({errorMes:error.message});
@@ -115,13 +119,14 @@ async function handleRequest(req,res,next) {
             const me = await User.findByIdAndUpdate(req.userId,{
                     $pull:{reqFriends:userId},
                     $addToSet:{friends:userId}
-            });
+            },{new:true})
             
             await User.findOneAndUpdate({
                 _id:userId
             },{
                 $addToSet:{friends:req.userId}
             });
+            io.to(userId).emit("newFriend",me)
             await session.commitTransaction();
             session.endSession();
             return res.status(200).json(me)
@@ -165,6 +170,7 @@ async function deleteFriend(req,res,next) {
             const session = await mongoose.startSession(); 
             session.startTransaction();
             try {
+
                 const me = await User.findByIdAndUpdate(req.userId,{
                     $pull:{friends:userId}
                 },{new:true}).populate('friends');
@@ -172,11 +178,11 @@ async function deleteFriend(req,res,next) {
                 await User.findByIdAndUpdate(userId,{
                     $pull:{friends:req.userId}
                 })
-                
+                io.to(userId).emit("deleteFriend",req.userId)
                 await session.commitTransaction();
                 session.endSession();
                 return res.status(200).json(me)
-            
+                
             } catch (error) {
                 await session.abortTransaction();
                 session.endSession();
@@ -197,6 +203,7 @@ async function cancelRequest(req,res,next) {
         if (!userExists) {
             return res.status(404).json({message:"user with this id dont exists"})
         }
+        
         const requestExists = await User.findOne({
             _id:userId,
             reqFriends:req.userId
@@ -205,7 +212,8 @@ async function cancelRequest(req,res,next) {
             await User.updateOne({
                 _id:userId,
                 $pull:{reqFriends:req.userId}
-            })
+            });
+            io.to(userId).emit("canceledRequest",req.userId)
             return res.status(200).json({message:"request removed Successfully"})
         }
         return res.status(404).json({message:"request dont exists"})
@@ -213,6 +221,7 @@ async function cancelRequest(req,res,next) {
         return res.status(500).json(error.message);
     }
 }
+
 
 async function requestTo(req,res,next) {
     try {

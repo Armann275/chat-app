@@ -1,3 +1,5 @@
+const User = require('../model/userModel');
+const Chat = require('../model/chatModel')
 function addVizibilityOrNot(users,visibility,userId){
     let addVizibility = false;
     let oppontUserId;
@@ -26,4 +28,27 @@ function checkVisibilityExists(visibility,userId){
     return false;
 }
 
-module.exports = {addVizibilityOrNot,checkVisibilityExists}
+
+async function findUserById(userId) {
+    try {
+        const user = await User.findById(userId)
+        return user
+    } catch (error) {
+        throw new Error('Database error occurred');
+    }
+}
+
+async function findAllUsersByUserIdArr(userIdArr) {
+    try {
+        const users = await User.find({
+            _id:{$in:userIdArr}
+        });
+        return users
+    } catch (error) {
+        throw new Error('Database error occurred');
+    }
+}
+
+
+
+module.exports = {addVizibilityOrNot,checkVisibilityExists,findUserById,findAllUsersByUserIdArr}

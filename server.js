@@ -43,6 +43,6 @@ io.on('connection',(socket) => {
 });
 
 server.listen(PORT);
-
+module.exports = io
 
 
