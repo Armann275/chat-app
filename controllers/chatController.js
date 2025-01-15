@@ -2,19 +2,23 @@ const Chat = require('../model/chatModel');
 const Message = require('../model/messageModel');
 const user = require('../model/userModel');
 const {checkVisibilityExists,findUserById,findAllUsersByUserIdArr} = require('../utils/chatUtils');
-
+// const {io} = require('../server');
 async function createChat(req, res, next) {
     try {
         const { userId } = req.body;
+        
+        
         if (req.userId === userId) {
             return res.status(404).json({message:"you cant add yourself"})
         }
         
-
+        
         const chechUser = await findUserById(userId)
+        
         if (!chechUser) {
             return res.status(404).json({message:"user dont exists"})
         }
+        
         
         let chatExist = await Chat.findOne(
             { 
@@ -24,32 +28,37 @@ async function createChat(req, res, next) {
         ).populate('users');
         
         
+        
         if (chatExist) {
            const checkVisibility = await Chat.findOne({
                 isGroupChat:false,
                 users:{$all:[req.userId,userId]},
-                visibility:req.userId
-            });
+                "visibility.user": req.userId
+            }).populate('users','-password').select('-visibility');
+            
+            
             if (checkVisibility) {
                 return res.status(200).json(checkVisibility)
-            }else{
-                const updatedChat = await Chat.updateOne({
+            }
+            else{
+                const updatedChat = await Chat.findOneAndUpdate({
                     isGroupChat:false,
                     users:{$all:[req.userId,userId]}
                 },{
                     $push:{visibility:{user:req.userId}}
-                })
+                },{new:true}).populate('users','-password').select('-visibility')
                 return res.status(200).json(updatedChat)
             }
         }
 
-        const chat = await Chat.create({
+        const createChat = await Chat.create({
                 chatName: "",
                 users:[req.userId,userId],
                 visibility:[{user:req.userId},{user:userId}]
         }); 
-        await chat.populate('users', '-password');
-        return res.status(200).json(chat);
+        const getChat = await Chat.findById(createChat._id).populate("users",'-password').select("-visibility")
+        
+        return res.status(200).json(getChat);
     } catch (error) {
         return res.status(500).json({ message: error.message});
     }
@@ -66,7 +75,8 @@ async function getAllChats(req,res,next) {
                     {visibility:{$elemMatch:{user:req.userId}}}
                 ]
             }
-        )
+        ).populate("users",'-password').populate('groupAdmin')
+        .select('-visibility')
         return res.status(200).json(chats)
     } catch (error) {
         return res.status(500).json({error:error.message});
@@ -88,7 +98,6 @@ async function createGroup(req,res,next) {
             return res.status(404).json({message:"one of the users dont exists"})
         }
 
-        
         users.push(req.userId);
         const chat = await Chat.create({
             chatName:groupName,
@@ -111,19 +120,20 @@ async function createGroup(req,res,next) {
 
 async function renameGroup(req,res,next) {
     try {
-        console.log(7);
-        
         const {chatId, groupName} = req.body
         if (!chatId || !groupName) {
             return res.status(404).json({message:'give all params'})
         }
+
         const chat = await Chat.findOneAndUpdate({
             _id:chatId,
             users:req.userId,
-            // visibility:{user:req.userId}
+            isGroupChat:true,
+            visibility:{$elemMatch:{user:req.userId}}
         },{
             $set:{chatName:groupName}
-        },{new:true}).populate('users','-password').populate('groupAdmin','-password');
+        },{new:true}).populate('users','-password')
+        .populate('groupAdmin','-password').select('-visibility');
 
         if (!chat) {
             return res.status(404).json({
@@ -170,16 +180,36 @@ async function groupAdd(req,res,next) {
 async function removeFromGroup(req,res,next) {
     try {
         const {userId,chatId} = req.body
+        const user = await findUserById(userId)
+        if (!user) {
+            return res.status(404).json({message:`user with this ${userId} dont exists`})
+        }
+        const chat = await Chat.findOne({
+            _id:chatId,
+            isGroupChat:true
+        });
+        if (!chat) {
+            return res.status(404).json({message:`groupChat with this ${chatId} dont exists`})
+        }
+        const isUserInChat = await Chat.findOne({
+            _id:chatId,
+            isGroupChat:true,
+            users:userId,
+        })
+        if (!isUserInChat) {
+            return res.status(404).json({message:`This  ${userId} User is not a member of this ${chatId}chat`})
+        }
         
         const updatedChat = await Chat.findOneAndUpdate({
             _id:chatId,
             groupAdmin:req.userId,
-            users:userId
+            users:userId,
         },
         {
             $pull: {users:userId,visibility:{user:userId}},
         },
-        { new: true }).populate('users','-password').populate('groupAdmin','-password');
+        { new: true }).populate('users','-password')
+        .populate('groupAdmin','-password').select('-visibility');
         if (!updatedChat) {
             return res.status(404).json({message:"Invalid request or unauthorized action"})
         }
