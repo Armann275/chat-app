@@ -111,7 +111,7 @@ async function createGroup(req,res,next) {
             $addToSet: { visibility: { $each: users.map(user => ({ user })) } }
         },{ new: true } )
         .populate('users','-password')
-        .populate('groupAdmin','-password')
+        .populate('groupAdmin','-password').select("-visibility")
         return res.status(200).json(populatedChat)
     } catch (error) {
         return res.status(500).json(error.message);
@@ -149,33 +149,42 @@ async function renameGroup(req,res,next) {
 
 async function groupAdd(req,res,next) {
     try {
+        
         const {chatId,usersArr} = req.body;
         const users = await findAllUsersByUserIdArr(usersArr);
         if (users.length !== usersArr.length) {
             return res.status(200).json({message:"one of this users dont exists"})
         }
         
-        const chat = await Chat.findOne({
+        const chat = await Chat.findOneAndUpdate({
             _id:chatId,
             isGroupChat:true,
             users:{
                 $not:{$in:usersArr},
                 $in:[req.userId]
             },
-        });
-        if (!chat) {
-            return res.status(404).json({message:"invalid chat id, or user already user Participate in this chat, or you dont have accsess to add"})
-        }
-        chat.users.push(...usersArr);
+        },{
+            $push:{users:{$each:usersArr}},
+        },{new:true});
         for(let i = 0; i < usersArr.length; i++){
             chat.visibility.push({user:usersArr[i]})
         }
         await chat.save();
-        return res.status(200).json(chat)
+        if (!chat) {
+            return res.status(404).json({message:"invalid chat id, or user already user Participate in this chat, or you dont have accsess to add"})
+        }
+        const chatDb = await Chat.findById(chat._id)
+        .populate('users','-password')
+        .populate('groupAdmin','-password').select("-visibility")
+        
+        return res.status(200).json(chatDb);
     } catch (error) {
         return res.status(500).json({error:error.message});
     }
 }
+
+
+
 
 async function removeFromGroup(req,res,next) {
     try {
@@ -225,6 +234,7 @@ async function deleteChat(req,res,next) {
         const chat = await Chat.findOne({
             $and: [
                 { _id: chatId },
+                {users:req.userId},
                 { visibility: { $elemMatch: { user: req.userId } } }
             ]
         });
@@ -242,7 +252,7 @@ async function deleteChat(req,res,next) {
             }
         }else{
             if (chat.users.length > 1) {
-                const s = await Chat.findByIdAndUpdate(
+                const chatDb = await Chat.findByIdAndUpdate(
                     chatId,
                     {
                         $pull: {
@@ -252,6 +262,10 @@ async function deleteChat(req,res,next) {
                     },
                     { new: true } 
                 );
+                if (chatDb.groupAdmin === req.userId) {
+                    chatDb.groupAdmin = null
+                    await chatDb.save();
+                }
             }else{
                 await Chat.deleteOne({_id:chatId});
                 await Message.deleteMany({chatId:chatId});
@@ -264,9 +278,45 @@ async function deleteChat(req,res,next) {
 }
 
 
+async function clearChatHistory(req,res,next) {
+    try {
+        const chatId = +req.params.chatId
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({message:"invalid chatId"})
+        }
+        const isUserMemberOfThisChat = await Chat.findOne({
+            _id:chatId,
+            users:req.userId,
+            visibility:{$elemMatch:{user:req.userId}}
+        });
+        if (!isUserMemberOfThisChat) {
+            return res.status(404).json({message:"user is not member of this chat"})
+        }
+        const updateVizibility = await Chat.findOneAndUpdate({
+            _id:chatId,
+            "visibility.user": req.userId  
+        },{
+            $set: {
+                "visibility.$[elem].date": new Date()  
+            }
+        }, {
+            arrayFilters: [{ "elem.user": req.userId }],  
+            new: true  
+        });
+        return res.status(200).json(updateVizibility)
+    } catch (error) {
+        return res.status(500).json({message:error});
+    }
+}
+
 module.exports = {
 createChat
 ,getAllChats
 ,createGroup,renameGroup
-,groupAdd,removeFromGroup,deleteChat}
+,groupAdd,removeFromGroup,
+deleteChat,
+clearChatHistory}
+
+
 

@@ -11,7 +11,7 @@ const schema = new Schema({
         type: Number,
         ref: "Message",
     },
-    groupAdmin: { type: Number, ref: "userss" },
+    groupAdmin: { type: Number, ref: "userss", default:null},
     visibility: [{
         user: { type: Number, ref: 'userss' },
         date: { type: Date, default: Date.now }

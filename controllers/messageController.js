@@ -17,16 +17,10 @@ async function sendMessage(req,res,next) {
         latestMessage: messages._id
     },
     {new:true}
-    );
+    ).populate("users",'-password').select("-visibility");
     
-    if (!chat.isGroupChat) {
-        const addVizibility = addVizibilityOrNot(chat.users,chat.visibility,req.userId);
-        if (addVizibility.addVizibility) {
-            chat.visibility.push({user:addVizibility.oppontUserId});
-            await chat.save()
-        }   
-    }
-    return res.status(200).json([messages,chat]);
+    return res.status(200).json({ message: messages, chat });
+
     } catch (error) {
         return res.status(500).json(error.message)
     }
@@ -42,15 +36,18 @@ async function getAllMessages(req,res,next) {
         if (!findChat) {
             return res.status(404).json({message:"invalid chatId"})
         }
+
+        const visibilityObj = await Chat.findOne(
+            {
+                _id: chatId,  
+                "visibility.user": req.userId  
+            },
+            {
+                "visibility.$": 1  
+            }
+        );
         
-        const visibleDateObj = await Chat.aggregate([
-            {$match:{_id:+chatId}},
-            {$unwind: { path: "$visibility" } },
-            {$match:{"visibility.user":req.userId}},
-            {$project:{"visibility.date":1,_id:0}}
-        ]);
-        
-        const visibleDate = visibleDateObj[0].visibility.date;
+        const visibleDate = visibilityObj.visibility[0].date
         
         const filter = {
             chatId,
