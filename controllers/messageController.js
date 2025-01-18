@@ -86,7 +86,7 @@ async function readAllMessages(req,res,next) {
         if (!chat) {
             return res.status(404).json({message:"bad request"})
         }
-
+        
             await Message.updateMany(
                 {chatId:chatId,senderId:{$ne:req.userId},receivedBy:{$ne:req.userId}},
                 {receivedBy:{$push:req.userId}}

@@ -239,34 +239,3 @@ module.exports = {getFriends,handleRequest,
     searchUser,deleteFriend,cancelRequest
     ,requestTo}
 
-
-
-
-// try {
-        
-        
-//     const user = await User.findOne({
-//         _id:req.userId,
-//         reqFriends:userId
-//     });
-//     if (user) {
-//         await User.updateOne({
-//             _id:userId,
-//             $push: { friends: req.userId }
-//         });
-//         await updateOne({
-//             _id:req.userId,
-//             $push: { friends: userId },
-//             $pull: { reqFriends: userId }
-//         });
-//         return res.status(200).json({message:"Added succesfuly"})
-//     }
-//     await User.updateOne({
-//         _id:userId,
-//         $push: { reqFriends: req.userId }
-//     });
-//     return req.status(200).json({message:"added succesfuly"})
-//     } catch (error) {
-//         return res.status(500).json({errorMes:error.message});
-//     }
-

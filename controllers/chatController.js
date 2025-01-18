@@ -1,7 +1,8 @@
 const Chat = require('../model/chatModel');
 const Message = require('../model/messageModel');
 const user = require('../model/userModel');
-const {checkVisibilityExists,findUserById,findAllUsersByUserIdArr} = require('../utils/chatUtils');
+const {checkVisibilityExists,findUserById,
+findChatAndUpdate,findAllUsersByUserIdArr,findChat} = require('../utils/chatUtils');
 // const {io} = require('../server');
 async function createChat(req, res, next) {
     try {
@@ -19,34 +20,35 @@ async function createChat(req, res, next) {
             return res.status(404).json({message:"user dont exists"})
         }
         
-        
-        let chatExist = await Chat.findOne(
-            { 
-                isGroupChat:false,
-                users:{$all:[req.userId,userId]},
-            }
-        ).populate('users');
+        let filter = { 
+            isGroupChat:false,
+            users:{$all:[req.userId,userId]},
+        }
+        const chatExist = await findChat(filter)
         
         
         
         if (chatExist) {
-           const checkVisibility = await Chat.findOne({
+            filter = {
                 isGroupChat:false,
                 users:{$all:[req.userId,userId]},
                 "visibility.user": req.userId
-            }).populate('users','-password').select('-visibility');
-            
+            }
+           const checkVisibility = await findChat(filter) 
             
             if (checkVisibility) {
                 return res.status(200).json(checkVisibility)
             }
             else{
-                const updatedChat = await Chat.findOneAndUpdate({
+                filter = {
                     isGroupChat:false,
                     users:{$all:[req.userId,userId]}
-                },{
+                }
+                const update = {
                     $push:{visibility:{user:req.userId}}
-                },{new:true}).populate('users','-password').select('-visibility')
+                }
+                const options = {new:true}
+                const updatedChat = await findChatAndUpdate(filter,update,options)
                 return res.status(200).json(updatedChat)
             }
         }
@@ -56,8 +58,10 @@ async function createChat(req, res, next) {
                 users:[req.userId,userId],
                 visibility:[{user:req.userId},{user:userId}]
         }); 
-        const getChat = await Chat.findById(createChat._id).populate("users",'-password').select("-visibility")
-        
+        filter = {
+            _id:createChat._id
+        }
+        const getChat = await findChat(filter)
         return res.status(200).json(getChat);
     } catch (error) {
         return res.status(500).json({ message: error.message});
@@ -97,22 +101,21 @@ async function createGroup(req,res,next) {
         if (checkAllUsersExists.length !== users.length) {
             return res.status(404).json({message:"one of the users dont exists"})
         }
-
+        
         users.push(req.userId);
         const chat = await Chat.create({
             chatName:groupName,
             users:users,
             isGroupChat:true,
-            groupAdmin:req.userId
+            groupAdmin:req.userId,
+            visibility: users.map(user => ({
+                user: user, 
+                date: Date.now() 
+            }))
         });
         
-        
-        const populatedChat = await Chat.findByIdAndUpdate(chat._id,{
-            $addToSet: { visibility: { $each: users.map(user => ({ user })) } }
-        },{ new: true } )
-        .populate('users','-password')
-        .populate('groupAdmin','-password').select("-visibility")
-        return res.status(200).json(populatedChat)
+        const getChat = await findChat({_id:chat._id})
+        return res.status(200).json(getChat)
     } catch (error) {
         return res.status(500).json(error.message);
     }
@@ -124,23 +127,24 @@ async function renameGroup(req,res,next) {
         if (!chatId || !groupName) {
             return res.status(404).json({message:'give all params'})
         }
-
-        const chat = await Chat.findOneAndUpdate({
+        const filter = {
             _id:chatId,
             users:req.userId,
             isGroupChat:true,
             visibility:{$elemMatch:{user:req.userId}}
-        },{
+        }
+        const update = {
             $set:{chatName:groupName}
-        },{new:true}).populate('users','-password')
-        .populate('groupAdmin','-password').select('-visibility');
-
+        }
+        const options = {new:true}
+        const chat = await findChatAndUpdate(filter,update,options)
+        
+        
         if (!chat) {
             return res.status(404).json({
                 message:'invalid chatId, or dont have access'
             });
         }
-        
         return res.status(200).json(chat)
     } catch (error) {
         return res.status(500).json(error.message)

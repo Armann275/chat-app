@@ -29,6 +29,8 @@ function checkVisibilityExists(visibility,userId){
 }
 
 
+
+
 async function findUserById(userId) {
     try {
         const user = await User.findById(userId)
@@ -49,6 +51,28 @@ async function findAllUsersByUserIdArr(userIdArr) {
     }
 }
 
+async function findChat(filter){
+    try {
+        const chat = await Chat.findOne(filter)
+        .populate('users','-password').select('-visibility');
+        return chat
+    } catch (error) {
+        throw new Error('Database error occurred');
+    }
+}
 
+async function findChatAndUpdate(filter,update,options){
+    try {
+        const updateChat = await Chat.findOneAndUpdate(filter,update,options)
+        .populate('users','-password').select('-visibility')
+        return updateChat
+    } catch (error) {
+        throw new Error('Database error occurred');
+    }
+}
 
-module.exports = {addVizibilityOrNot,checkVisibilityExists,findUserById,findAllUsersByUserIdArr}
+module.exports = {addVizibilityOrNot,checkVisibilityExists,
+    findUserById,
+    findAllUsersByUserIdArr,
+    findChat,findChatAndUpdate,
+    findChatAndUpdate}
