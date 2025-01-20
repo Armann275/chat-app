@@ -6,7 +6,9 @@ const messageSchema = new Schema({
     senderId:{type:Number,ref:'userss'},
     content:{type:String},
     chatId:{type:Number,ref:"chats"},
+    isSystemMessage:{type:Boolean,default:false},
     receivedBy:[{type:Number,ref:"userss",default:[]}],
+    
 },{timestamps:true});
 module.exports = model('message',messageSchema);
 messageSchema.plugin(mongooseSequence, { inc_field: '_id', id: 'message_seq' });

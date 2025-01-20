@@ -57,7 +57,8 @@ async function createChat(req, res, next) {
                 chatName: "",
                 users:[req.userId,userId],
                 visibility:[{user:req.userId},{user:userId}]
-        }); 
+        });
+
         filter = {
             _id:createChat._id
         }
@@ -123,7 +124,8 @@ async function createGroup(req,res,next) {
 
 async function renameGroup(req,res,next) {
     try {
-        const {chatId, groupName} = req.body
+        const chatId = +req.params.chatId
+        const {groupName} = req.body
         if (!chatId || !groupName) {
             return res.status(404).json({message:'give all params'})
         }
@@ -134,18 +136,25 @@ async function renameGroup(req,res,next) {
             visibility:{$elemMatch:{user:req.userId}}
         }
         const update = {
-            $set:{chatName:groupName}
+            $set:{chatName:groupName},
+            
         }
         const options = {new:true}
         const chat = await findChatAndUpdate(filter,update,options)
-        
-        
+        const message = await Message.create({
+            chatId:chatId,
+            senderId:req.userId,
+            isSystemMessage:true,
+            content:`${req.decoded.username} changed the name of the group to ${chat.chatName}`
+        })
+        chat.latestMessage = message._id
+        await chat.save()
         if (!chat) {
             return res.status(404).json({
                 message:'invalid chatId, or dont have access'
             });
         }
-        return res.status(200).json(chat)
+        return res.status(200).json({chat,message})
     } catch (error) {
         return res.status(500).json(error.message)
     }
@@ -192,6 +201,8 @@ async function groupAdd(req,res,next) {
 
 async function removeFromGroup(req,res,next) {
     try {
+        
+        
         const {userId,chatId} = req.body
         const user = await findUserById(userId)
         if (!user) {
@@ -212,21 +223,28 @@ async function removeFromGroup(req,res,next) {
         if (!isUserInChat) {
             return res.status(404).json({message:`This  ${userId} User is not a member of this ${chatId}chat`})
         }
-        
-        const updatedChat = await Chat.findOneAndUpdate({
+        const filter = {
             _id:chatId,
             groupAdmin:req.userId,
             users:userId,
-        },
-        {
+        }
+        const update = {
             $pull: {users:userId,visibility:{user:userId}},
-        },
-        { new: true }).populate('users','-password')
-        .populate('groupAdmin','-password').select('-visibility');
+        }
+        const options = { new: true }
+        const updatedChat = await findChatAndUpdate(filter,update,options)
         if (!updatedChat) {
             return res.status(404).json({message:"Invalid request or unauthorized action"})
         }
-        return res.status(200).json(updatedChat);
+        const message = await Message.create({
+            senderId:req.userId,
+            chatId:chatId,
+            isSystemMessage:true,
+            content:`${req.decoded.username} deleted ${user.username} from the chat`
+        });
+        updatedChat.latestMessage = message._id
+        await updatedChat.save()
+        return res.status(200).json({updatedChat,message});
     } catch (error) {
         return res.status(500).json({message:error})
     }
@@ -235,51 +253,80 @@ async function removeFromGroup(req,res,next) {
 async function deleteChat(req,res,next) {
     try {
         const chatId = +req.params.chatId
-        const chat = await Chat.findOne({
-            $and: [
-                { _id: chatId },
-                {users:req.userId},
-                { visibility: { $elemMatch: { user: req.userId } } }
-            ]
-        });
+        let filter = {
+                _id: chatId,
+                users:req.userId,
+                visibility: { $elemMatch: { user: req.userId } },
+                isGroupChat:false 
+        }
+        const chat = await findChat(filter);
         if (!chat) {
             return res.status(404).json({message:"invalid chatId"})
         }
-        if (!chat.isGroupChat) {
+        
             if (chat.visibility.length > 1) {
-                const s = await Chat.findByIdAndUpdate(chatId,{
+                filter = {_id:chatId}
+                const update = {
                     $pull: { visibility: {user:req.userId}} 
-                },{new:true});
-            }else{
-                await Chat.deleteOne({_id:chatId});
-                await Message.deleteMany({chatId:chatId});
-            }
-        }else{
-            if (chat.users.length > 1) {
-                const chatDb = await Chat.findByIdAndUpdate(
-                    chatId,
-                    {
-                        $pull: {
-                            visibility: { user: req.userId },
-                            users: req.userId
-                        }
-                    },
-                    { new: true } 
-                );
-                if (chatDb.groupAdmin === req.userId) {
-                    chatDb.groupAdmin = null
-                    await chatDb.save();
                 }
+                const options = {new:true}
+                const s = await findChatAndUpdate(filter,update,options);
+                return res.status(200).json({message:"chat deleted"})
             }else{
                 await Chat.deleteOne({_id:chatId});
                 await Message.deleteMany({chatId:chatId});
             }
-        }
-        return res.status(200).json({message:"chat deleted"});
     } catch (error) {
         return res.status(500).json({message:error});
     }
 }
+
+async function leaveGroup(req,res,next) {
+    try {
+        const chatId = +req.params.chatId
+        const chat = await Chat.findOne({
+            _id:chatId,
+            isGroupChat:true,
+            users:req.userId
+        });
+        
+        if (!chat) {
+            return res.status(404).json({message:"invalid chat"})
+        }
+        let filter = {_id:chatId}
+        const update = {
+            $pull: {
+                visibility: { user: req.userId },
+                users: req.userId
+            }
+        }
+        const options = { new: true } 
+        if (chat.users.length > 1) {
+            const chatDb = await findChatAndUpdate(filter,update,options);
+            if (chatDb.groupAdmin === req.userId) {
+                chatDb.groupAdmin = null
+                await chatDb.save();
+            }
+            const message = await Message.create({
+                senderId:req.userId,
+                isSystemMessage:true,
+                content:`${req.decoded.username} leaves the group`,
+                chatId:chatId
+            });
+            chatDb.latestMessage = message._id
+            await chatDb.save()
+            return res.status(200).json({chatDb,message})
+        }
+        else{
+            await Chat.deleteOne({_id:chatId});
+            await Message.deleteMany({chatId:chatId});
+        }
+    } catch (error) {
+        return res.status(500).json({message:error});
+    }
+}
+
+
 
 
 async function clearChatHistory(req,res,next) {
@@ -289,26 +336,30 @@ async function clearChatHistory(req,res,next) {
         if (!chat) {
             return res.status(404).json({message:"invalid chatId"})
         }
-        const isUserMemberOfThisChat = await Chat.findOne({
+        let filter = {
             _id:chatId,
             users:req.userId,
             visibility:{$elemMatch:{user:req.userId}}
-        });
+        }
+        const isUserMemberOfThisChat = await findChat(filter);
         if (!isUserMemberOfThisChat) {
             return res.status(404).json({message:"user is not member of this chat"})
         }
-        const updateVizibility = await Chat.findOneAndUpdate({
+        filter = {
             _id:chatId,
             "visibility.user": req.userId  
-        },{
+        }
+        const update = {
             $set: {
                 "visibility.$[elem].date": new Date()  
             }
-        }, {
+        }
+        const options = {
             arrayFilters: [{ "elem.user": req.userId }],  
             new: true  
-        });
-        return res.status(200).json(updateVizibility)
+        }
+        const updateVizibility = await findChatAndUpdate(filter,update,options);
+        return res.status(200).json({message:"messages cleared"})
     } catch (error) {
         return res.status(500).json({message:error});
     }
@@ -320,7 +371,9 @@ createChat
 ,createGroup,renameGroup
 ,groupAdd,removeFromGroup,
 deleteChat,
-clearChatHistory}
+clearChatHistory,
+leaveGroup
+}
 
 
 
