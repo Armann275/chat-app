@@ -7,17 +7,6 @@ const tokenService = require('../service/tokenService');
 const mongoose = require('mongoose');
 const tokenModel = require('../model/tokenModel') 
 
-function getRegistration(req,res,next){
-    res.sendFile(path.join(__dirname,'../','views','registration.html')); // Registration You have to provide
-}
-
-function getLogin(req,res,next){
-    res.sendFile(path.join(__dirname,'../','views','login.html')); 
-}
-
-function getMain(req,res,next){
-    res.sendFile(path.join(__dirname,'../','views','main.html')); // main You have to provide
-}
 
 
 async function postRegistration(req,res,next){
@@ -109,11 +98,11 @@ async function refreshToken(req,res,next) {
 
 
 module.exports = {
-getRegistration
-,postRegistration
-,getMain,
+
+postRegistration
+,
 postLogin,
-getLogin,refreshToken,
+refreshToken,
 };
 
 

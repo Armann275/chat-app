@@ -17,8 +17,5 @@ const schema = new Schema({
         date: { type: Date, default: Date.now }
     }]
 }, { timestamps: true });
-
-// Apply the auto-increment plugin with a unique sequence name
 schema.plugin(mongooseSequence, { inc_field: '_id', id: 'chat_seq' });
-
 module.exports = model('chats',schema);

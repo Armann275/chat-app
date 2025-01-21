@@ -1,6 +1,6 @@
 const User = require('../model/userModel');
 const mongoose = require('mongoose');
-const io = require('../server')
+
 
 async function searchUser(req,res,next) {
     try {
@@ -86,7 +86,7 @@ async function addFriend(req,res,next) {
         },{
             $push:{reqFriends:req.userId}
         });
-        io.to(userId).emit("newFriendRequest",me)
+        
         return res.status(200).json({messsage:"Requst added Successfully"})
     } catch (error) {
         return res.status(500).json({errorMes:error.message});
@@ -126,7 +126,7 @@ async function handleRequest(req,res,next) {
             },{
                 $addToSet:{friends:req.userId}
             });
-            io.to(userId).emit("newFriend",me)
+            
             await session.commitTransaction();
             session.endSession();
             return res.status(200).json(me)
@@ -178,7 +178,7 @@ async function deleteFriend(req,res,next) {
                 await User.findByIdAndUpdate(userId,{
                     $pull:{friends:req.userId}
                 })
-                io.to(userId).emit("deleteFriend",req.userId)
+                
                 await session.commitTransaction();
                 session.endSession();
                 return res.status(200).json(me)
@@ -213,7 +213,7 @@ async function cancelRequest(req,res,next) {
                 _id:userId,
                 $pull:{reqFriends:req.userId}
             });
-            io.to(userId).emit("canceledRequest",req.userId)
+            
             return res.status(200).json({message:"request removed Successfully"})
         }
         return res.status(404).json({message:"request dont exists"})

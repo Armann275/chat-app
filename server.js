@@ -29,20 +29,14 @@ io.on('connection',(socket) => {
         socket.join(room);
     });
     
-    socket.on('message',(message,room) => {
-        io.to(room).emit('message',message);
-    });
     
     socket.on("disconnecting", (room) => {
         socket.leave(room)
-    });
-
-    // socket.on("markAsRead",(chatId,userId) => {
-    //     io.to(chatId).emit('userReadAllMessages',userId)
-    // });
+    })
+    
 });
 
 server.listen(PORT);
-module.exports = { server, io };
+
 
 

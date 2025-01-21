@@ -1,9 +1,9 @@
 const Chat = require('../model/chatModel');
 const Message = require('../model/messageModel');
 const user = require('../model/userModel');
-const {checkVisibilityExists,findUserById,
+const {findUserById,
 findChatAndUpdate,findAllUsersByUserIdArr,findChat} = require('../utils/chatUtils');
-// const {io} = require('../server');
+
 async function createChat(req, res, next) {
     try {
         const { userId } = req.body;
@@ -75,10 +75,10 @@ async function getAllChats(req,res,next) {
     try {
         const chats = await Chat.find(
             {
-                $and:[
-                    {users:req.userId},
-                    {visibility:{$elemMatch:{user:req.userId}}}
-                ]
+                
+                    users:req.userId,
+                    visibility:{$elemMatch:{user:req.userId}}
+                
             }
         ).populate("users",'-password').populate('groupAdmin')
         .select('-visibility')
@@ -95,15 +95,18 @@ async function createGroup(req,res,next) {
     try {
         const users = req.body.users;
         const groupName = req.body.groupName;
+        
         if (!users || !groupName) {
             return res.status(404).json({message:'give all parameters'});
         }
-        const checkAllUsersExists = await findAllUsersByUserIdArr(users)
-        if (checkAllUsersExists.length !== users.length) {
+        
+        const usersData  = await findAllUsersByUserIdArr(users)
+        if (usersData.users.length !== users.length) {
             return res.status(404).json({message:"one of the users dont exists"})
         }
         
         users.push(req.userId);
+        
         const chat = await Chat.create({
             chatName:groupName,
             users:users,
@@ -114,9 +117,16 @@ async function createGroup(req,res,next) {
                 date: Date.now() 
             }))
         });
-        
+        const systemMessage = await Message.create({
+            senderId:req.userId,
+            chatId:chat._id,
+            isSystemMessage:true,
+            content:`${req.decoded.username} created groupchat`
+        });
+        chat.latestMessage = systemMessage._id
+        await chat.save();
         const getChat = await findChat({_id:chat._id})
-        return res.status(200).json(getChat)
+        return res.status(200).json({chat:getChat,message:systemMessage})
     } catch (error) {
         return res.status(500).json(error.message);
     }
@@ -129,6 +139,7 @@ async function renameGroup(req,res,next) {
         if (!chatId || !groupName) {
             return res.status(404).json({message:'give all params'})
         }
+
         const filter = {
             _id:chatId,
             users:req.userId,
@@ -137,7 +148,6 @@ async function renameGroup(req,res,next) {
         }
         const update = {
             $set:{chatName:groupName},
-            
         }
         const options = {new:true}
         const chat = await findChatAndUpdate(filter,update,options)
@@ -164,33 +174,50 @@ async function groupAdd(req,res,next) {
     try {
         
         const {chatId,usersArr} = req.body;
-        const users = await findAllUsersByUserIdArr(usersArr);
-        if (users.length !== usersArr.length) {
-            return res.status(200).json({message:"one of this users dont exists"})
+        
+        const usersData = await findAllUsersByUserIdArr(usersArr);
+        if (usersData.users.length !== usersArr.length) {
+            return res.status(404).json({message:"one of this users dont exists"})
         }
         
-        const chat = await Chat.findOneAndUpdate({
+
+        const vizibilityArr = usersArr.map(userId => ({user:userId,date: Date.now()}))
+
+        let chatFilter  = {
             _id:chatId,
             isGroupChat:true,
             users:{
                 $not:{$in:usersArr},
                 $in:[req.userId]
             },
-        },{
-            $push:{users:{$each:usersArr}},
-        },{new:true});
-        for(let i = 0; i < usersArr.length; i++){
-            chat.visibility.push({user:usersArr[i]})
         }
-        await chat.save();
+        
+                
+        let update = {
+            $push:{
+            users:{$each:usersArr},
+            visibility:{$each:vizibilityArr}
+            }
+        }
+        
+        let options = {new:true}
+        const chat = await findChatAndUpdate(chatFilter,update,options);
+        
+        
         if (!chat) {
             return res.status(404).json({message:"invalid chat id, or user already user Participate in this chat, or you dont have accsess to add"})
         }
-        const chatDb = await Chat.findById(chat._id)
-        .populate('users','-password')
-        .populate('groupAdmin','-password').select("-visibility")
-        
-        return res.status(200).json(chatDb);
+        const message = await Message.create({
+            senderId:req.userId,
+            chatId:chatId,
+            isSystemMessage:true,
+            content:`${req.decoded.username} added ${usersData.usersListStr}`
+        });
+        chat.latestMessage = message._id;
+        await chat.save()
+        chatFilter = {_id:chat._id}
+        const chatDb = await findChat(chatFilter)
+        return res.status(200).json({chat:chatDb,message});
     } catch (error) {
         return res.status(500).json({error:error.message});
     }
@@ -201,8 +228,6 @@ async function groupAdd(req,res,next) {
 
 async function removeFromGroup(req,res,next) {
     try {
-        
-        
         const {userId,chatId} = req.body
         const user = await findUserById(userId)
         if (!user) {
@@ -270,7 +295,7 @@ async function deleteChat(req,res,next) {
                     $pull: { visibility: {user:req.userId}} 
                 }
                 const options = {new:true}
-                const s = await findChatAndUpdate(filter,update,options);
+                await findChatAndUpdate(filter,update,options);
                 return res.status(200).json({message:"chat deleted"})
             }else{
                 await Chat.deleteOne({_id:chatId});
@@ -365,6 +390,29 @@ async function clearChatHistory(req,res,next) {
     }
 }
 
+
+async function becomeAdmin(req,res,next) {
+    try {
+        const {chatId} = req.body;
+        const chat = await findChat(
+            {
+                _id:chatId,
+                isGroupChat:true,
+                users:req.userId,
+                groupAdmin:null
+            }
+        );
+        if (!chat) {
+            return res.status(404).json({ message: "Chat not found or user is not eligible to become admin" });
+        }
+        chat.groupAdmin = req.userId
+        await chat.save();
+        return res.status(200).json(chat)
+    } catch (error) {
+        return res.status(500).json({message:error});
+    }
+}
+
 module.exports = {
 createChat
 ,getAllChats
@@ -372,7 +420,7 @@ createChat
 ,groupAdd,removeFromGroup,
 deleteChat,
 clearChatHistory,
-leaveGroup
+leaveGroup,becomeAdmin
 }
 
 

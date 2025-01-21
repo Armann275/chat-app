@@ -1,7 +1,7 @@
 const Message = require('../model/messageModel'); 
 const User = require('../model/userModel');
 const Chat = require('../model/chatModel'); 
-const {addVizibilityOrNot} = require('../utils/chatUtils'); 
+const {findChatAndUpdate,findChat} = require('../utils/chatUtils'); 
 
 async function sendMessage(req,res,next) {
     try {
@@ -13,14 +13,15 @@ async function sendMessage(req,res,next) {
     }
     
     const messages = await Message.create(message);
-    const chat = await Chat.findByIdAndUpdate(chatId,{
+    const filter = {
+        _id:chatId
+    } 
+    const update = {
         latestMessage: messages._id
-    },
-    {new:true}
-    ).populate("users",'-password').select("-visibility");
-    
+    }
+    const options = {new:true}
+    const chat = await findChatAndUpdate(filter,update,options)
     return res.status(200).json({ message: messages, chat });
-
     } catch (error) {
         return res.status(500).json(error.message)
     }
@@ -36,7 +37,7 @@ async function getAllMessages(req,res,next) {
         if (!findChat) {
             return res.status(404).json({message:"invalid chatId"})
         }
-
+        
         const visibilityObj = await Chat.findOne(
             {
                 _id: chatId,  
@@ -75,26 +76,5 @@ async function deleteMessage(req,res,next) {
     }
 }
 
-async function readAllMessages(req,res,next) {
-    try {
-        const {chatId} = req.body;
-        const chat = Chat.findOne({
-            _id:chatId,
-            users:req.userId,
-            visibility:{user:req.userId}
-        })
-        if (!chat) {
-            return res.status(404).json({message:"bad request"})
-        }
-        
-            await Message.updateMany(
-                {chatId:chatId,senderId:{$ne:req.userId},receivedBy:{$ne:req.userId}},
-                {receivedBy:{$push:req.userId}}
-            );
-            return res.status(200).json({message:"Messages marked as read"})
-    } catch (error) {
-        return res.status(500).json(error.message)
-    }
-}
 
-module.exports = {sendMessage,getAllMessages,deleteMessage,readAllMessages}
+module.exports = {sendMessage,getAllMessages,deleteMessage}

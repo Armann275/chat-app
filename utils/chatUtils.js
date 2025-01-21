@@ -1,35 +1,5 @@
 const User = require('../model/userModel');
 const Chat = require('../model/chatModel')
-function addVizibilityOrNot(users,visibility,userId){
-    let addVizibility = false;
-    let oppontUserId;
-    for(let i = 0; i < users.length; i++){
-        if (users[i] !== userId) {
-            oppontUserId = users[i]
-        }
-    }
-    
-    for(let i = 0; i < visibility.length; i++){
-        addVizibility = true
-        if (visibility[i].user === oppontUserId) {
-            addVizibility = false
-            break;
-        }
-    }
-    return {addVizibility,oppontUserId}
-}
-
-function checkVisibilityExists(visibility,userId){
-    for(let i = 0; i < visibility.length; i++){
-        if (visibility[i].user === userId) {
-            return true
-        }
-    }
-    return false;
-}
-
-
-
 
 async function findUserById(userId) {
     try {
@@ -42,11 +12,22 @@ async function findUserById(userId) {
 
 async function findAllUsersByUserIdArr(userIdArr) {
     try {
+        let usersListStr = "";
         const users = await User.find({
-            _id:{$in:userIdArr}
-        });
-        return users
+            _id: { $in: userIdArr }
+        }).select("username");
+        
+        for (let i = 0; i < users.length; i++) {
+            console.log(users[i].username);
+            
+            usersListStr += users[i].username;
+            if (users[i + 1] && users[i + 1].username) {
+                usersListStr += ",";
+            }
+        }
+        return { users, usersListStr };
     } catch (error) {
+        
         throw new Error('Database error occurred');
     }
 }
@@ -54,7 +35,8 @@ async function findAllUsersByUserIdArr(userIdArr) {
 async function findChat(filter){
     try {
         const chat = await Chat.findOne(filter)
-        .populate('users','-password').select('-visibility');
+        .populate('users','-password')
+        .select('-visibility').populate("groupAdmin",'-password');
         return chat
     } catch (error) {
         throw new Error('Database error occurred');
@@ -71,7 +53,7 @@ async function findChatAndUpdate(filter,update,options){
     }
 }
 
-module.exports = {addVizibilityOrNot,checkVisibilityExists,
+module.exports = {
     findUserById,
     findAllUsersByUserIdArr,
     findChat,findChatAndUpdate,
